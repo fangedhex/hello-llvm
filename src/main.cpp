@@ -4,6 +4,15 @@
 // LLVM Includes
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h>
+#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
+#include <llvm/ExecutionEngine/GenericValue.h>
+
+typedef llvm::orc::ObjectLinkingLayer ObjLayerT;
+typedef llvm::orc::IRCompileLayer CompileLayerT;
 
 int main(int argc, char const *argv[])
 {
@@ -31,5 +40,23 @@ int main(int argc, char const *argv[])
 
   module.print(llvm::errs(), nullptr);
 
-  return 0;
+  // Initilaze native target
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmParser();
+
+  std::unique_ptr<llvm::Module> ptrModule(&module);
+  llvm::EngineBuilder engineBuilder(std::move(ptrModule));
+  engineBuilder.setEngineKind(llvm::EngineKind::Interpreter);
+
+  std::string err;
+  engineBuilder.setErrorStr(&err);
+  auto executionEngine = engineBuilder.create();
+  executionEngine->runStaticConstructorsDestructors(false);
+  auto main = executionEngine->FindFunctionNamed("main");
+  if (!main)
+    return EXIT_FAILURE;
+  executionEngine->runFunction(main, llvm::ArrayRef<llvm::GenericValue>());
+
+  return EXIT_SUCCESS;
 }
